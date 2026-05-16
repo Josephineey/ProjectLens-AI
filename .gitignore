@@ -19,3 +19,6 @@ build/
 .projectlens/
 projectlens-output.md
 .test-tmp/
+
+# Personal learning notes kept outside the public GitHub project.
+docs/learning-notes-tr.md
