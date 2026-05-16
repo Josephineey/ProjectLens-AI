@@ -134,6 +134,9 @@ def test_embedding_backend(
     )
 
 
+# Keep pytest from collecting this public helper as a test when imported in test modules.
+test_embedding_backend.__test__ = False
+
 def current_embedding_status(root: str | Path) -> EmbeddingStatus:
     config = load_config(root)
     return embedding_status(config.embedding)
