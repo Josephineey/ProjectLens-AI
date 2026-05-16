@@ -10,6 +10,7 @@ from .mcp_tools import (
     mcp_index_repository,
     mcp_language_capabilities,
     mcp_run_checks,
+    mcp_repository_overview,
     mcp_run_eval,
     mcp_scan_repository,
     mcp_search_code,
@@ -30,11 +31,21 @@ def create_mcp_server(default_root: str | Path):
     mcp = FastMCP(
         "ProjectLens AI",
         instructions=(
-            "Use ProjectLens to scan, index, search, inspect, and report capability coverage for local code repositories. "
+            "Use ProjectLens to overview, scan, index, search, inspect, and report capability coverage for local code repositories. "
+            "Start with projectlens_repository_overview for first-pass repo understanding. "
             "Prefer projectlens_index_repository before search or ask when no index exists. "
             "projectlens_ask_codebase returns source-grounded evidence and does not call an LLM."
         ),
     )
+
+    @mcp.tool()
+    def projectlens_repository_overview(
+        path: str | None = None,
+        build_index_if_missing: bool = True,
+        include_checks: bool = True,
+    ) -> dict[str, Any]:
+        """Return a compact first-pass repository overview for an MCP client."""
+        return mcp_repository_overview(root, path, build_index_if_missing, include_checks)
 
     @mcp.tool()
     def projectlens_scan_repository(path: str | None = None) -> dict[str, Any]:
@@ -45,6 +56,7 @@ def create_mcp_server(default_root: str | Path):
     def projectlens_index_repository(path: str | None = None) -> dict[str, Any]:
         """Build or refresh the local SQLite index for a repository."""
         return mcp_index_repository(root, path)
+
     @mcp.tool()
     def projectlens_language_capabilities(path: str | None = None) -> dict[str, Any]:
         """Report language parser coverage, confidence, and fallback status for a repository."""
@@ -69,6 +81,7 @@ def create_mcp_server(default_root: str | Path):
     def projectlens_run_checks(path: str | None = None) -> dict[str, Any]:
         """Run local project readiness checks for README, tests, packaging, secrets, gitignore, and CI."""
         return mcp_run_checks(root, path)
+
     @mcp.tool()
     def projectlens_run_eval(path: str | None = None, cases_path: str | None = None, limit: int = 5, run_ask: bool = True) -> dict[str, Any]:
         """Run retrieval eval cases and report whether expected files were found with source evidence."""

@@ -49,6 +49,70 @@ def mcp_language_capabilities(default_root: str | Path, path: str | None = None)
         "warnings": report.warnings,
     }
 
+
+def mcp_repository_overview(
+    default_root: str | Path,
+    path: str | None = None,
+    build_index_if_missing: bool = True,
+    include_checks: bool = True,
+) -> dict[str, Any]:
+    root = resolve_tool_root(default_root, path)
+    report = scan_repository(root)
+    stats_before = load_index_stats(root)
+    index_built = False
+    stats = stats_before
+    if build_index_if_missing and stats is None:
+        stats = build_index(root)
+        index_built = True
+
+    checks_payload: dict[str, Any] | None = None
+    if include_checks:
+        checks = run_project_checks(root)
+        checks_payload = {
+            "ok": checks.is_passing,
+            "summary": {
+                "pass": checks.pass_count,
+                "warn": checks.warn_count,
+                "fail": checks.fail_count,
+                "info": checks.info_count,
+            },
+            "findings": [
+                {
+                    "code": result.code,
+                    "status": result.status,
+                    "title": result.title,
+                    "message": result.message,
+                    "paths": list(result.paths),
+                }
+                for result in checks.results
+                if result.status in {"fail", "warn"}
+            ][:8],
+        }
+
+    return {
+        "ok": True,
+        "root": report.root,
+        "answer_policy": "No LLM was called. This is a compact repository overview for an MCP client.",
+        "summary": {
+            "files": report.file_count,
+            "symbols": report.symbol_count,
+            "imports": len(report.imports),
+            "technologies": report.technologies,
+            "entrypoints": report.entrypoints,
+            "warnings": report.warnings,
+        },
+        "index": _overview_index_payload(stats, stats_before is not None, index_built),
+        "checks": checks_payload,
+        "language_capabilities": [asdict(capability) for capability in report.language_capabilities],
+        "important_files": _overview_important_files(report),
+        "suggested_follow_up_queries": _overview_follow_up_queries(report),
+        "usage_hint": (
+            "Use this overview first, then call projectlens_search_code or projectlens_ask_codebase "
+            "with focused technical English queries when the user asks deeper questions."
+        ),
+    }
+
+
 def mcp_index_repository(default_root: str | Path, path: str | None = None) -> dict[str, Any]:
     root = resolve_tool_root(default_root, path)
     stats = build_index(root)
@@ -193,3 +257,76 @@ def mcp_run_eval(
     payload["ok"] = report.is_passing
     payload["cases_path"] = str(resolved_cases)
     return payload
+
+def _overview_index_payload(stats, indexed_before: bool, built_now: bool) -> dict[str, Any]:
+    if stats is None:
+        return {
+            "indexed": False,
+            "indexed_before": indexed_before,
+            "built_now": built_now,
+            "message": "Index was not built. Call projectlens_index_repository before search or ask.",
+        }
+    return {
+        "indexed": True,
+        "indexed_before": indexed_before,
+        "built_now": built_now,
+        "index_path": stats.index_path,
+        "schema_version": stats.schema_version,
+        "files": stats.file_count,
+        "symbols": stats.symbol_count,
+        "imports": stats.import_count,
+        "chunks": stats.chunk_count,
+        "embeddings": stats.embedding_count,
+    }
+
+
+def _overview_important_files(report) -> list[dict[str, Any]]:
+    priority_names = {
+        "readme.md",
+        "package.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "dockerfile",
+        "docker-compose.yml",
+        "compose.yml",
+        "tsconfig.json",
+        "vite.config.ts",
+        "next.config.js",
+        "playwright.config.ts",
+    }
+    selected = []
+    seen: set[str] = set()
+    for file in report.files:
+        name = Path(file.path).name.lower()
+        if name in priority_names or file.path in report.entrypoints:
+            selected.append(file)
+            seen.add(file.path)
+    for role in ("source", "test", "documentation", "config"):
+        for file in report.files:
+            if file.path not in seen and file.role == role:
+                selected.append(file)
+                seen.add(file.path)
+                break
+    return [
+        {"path": file.path, "role": file.role, "suffix": file.suffix, "size_bytes": file.size_bytes}
+        for file in selected[:12]
+    ]
+
+
+def _overview_follow_up_queries(report) -> list[str]:
+    queries = [
+        "project purpose README usage architecture",
+        "CLI entrypoint main workflow command options",
+        "configuration settings environment variables",
+        "tests CI scripts quality checks",
+    ]
+    technologies = {technology.lower() for technology in report.technologies}
+    if "python" in technologies:
+        queries.append("Python package entrypoints pyproject src layout")
+    if "javascript" in technologies or "typescript" in technologies or "node.js" in technologies:
+        queries.append("package.json scripts TypeScript source entrypoint")
+    if "playwright" in technologies:
+        queries.append("Playwright test generation browser automation config")
+    if "github actions" in technologies:
+        queries.append("GitHub Actions CI workflow test command")
+    return queries[:8]

@@ -279,6 +279,7 @@ ProjectLens can run as a stdio MCP server. MCP clients start the command as a
 child process and call ProjectLens tools through standard input/output. The
 server exposes the same local-first capabilities as the CLI:
 
+- `projectlens_repository_overview`
 - `projectlens_scan_repository`
 - `projectlens_index_repository`
 - `projectlens_language_capabilities`
@@ -316,8 +317,26 @@ the `projectlens-mcp` command and pass `--root` with the repository path.
 ## MCP Prompt Examples
 
 When ProjectLens is connected to an MCP client, users do not need to know the
-low-level `scan`, `index`, or `search` commands. Ask the AI client to inspect a
-local repository path and let it choose the right ProjectLens tools.
+low-level `scan`, `index`, or `search` commands. The client can start with
+`projectlens_repository_overview` for a compact first pass: technologies,
+entrypoints, language support, index status, quality-check summary, important
+files, and suggested follow-up queries. Then it can call search or ask tools only
+when the user needs deeper evidence.
+
+Start with the compact overview when you want a fast first answer:
+
+```text
+Use ProjectLens to inspect this repository:
+C:\path\to\repo
+
+Start with the compact overview tool first. Then explain in simple Turkish:
+- what the project does
+- how to run it
+- which files matter most
+- what architecture or patterns it uses
+```
+
+Minimal prompt also works:
 
 ```text
 Use ProjectLens to inspect this repository:

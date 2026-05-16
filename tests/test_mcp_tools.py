@@ -12,6 +12,7 @@ from projectlens_ai.mcp_tools import (
     mcp_ask_codebase,
     mcp_index_repository,
     mcp_language_capabilities,
+    mcp_repository_overview,
     mcp_run_checks,
     mcp_run_eval,
     mcp_scan_repository,
@@ -50,6 +51,23 @@ class McpToolTests(unittest.TestCase):
         self.assertIn("No LLM was called", ask["answer_policy"])
         self.assertTrue(checks["ok"])
         self.assertEqual(checks["summary"]["fail"], 0)
+
+    def test_repository_overview_builds_compact_first_pass_payload(self) -> None:
+        with tempfile.TemporaryDirectory(dir=_test_tmp_root()) as directory:
+            root = Path(directory)
+            _write_sample_repo(root)
+
+            overview = mcp_repository_overview(root)
+            status = mcp_status(root)
+
+        self.assertTrue(overview["ok"])
+        self.assertEqual(overview["summary"]["files"], status["files"])
+        self.assertTrue(overview["index"]["indexed"])
+        self.assertTrue(overview["index"]["built_now"])
+        self.assertTrue(overview["checks"]["ok"])
+        self.assertGreater(len(overview["important_files"]), 0)
+        self.assertGreater(len(overview["suggested_follow_up_queries"]), 0)
+        self.assertIn("No LLM was called", overview["answer_policy"])
 
     def test_search_and_ask_return_hint_before_index_exists(self) -> None:
         with tempfile.TemporaryDirectory(dir=_test_tmp_root()) as directory:
