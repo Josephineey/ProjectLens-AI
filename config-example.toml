@@ -1,0 +1,17 @@
+# ProjectLens AI configuration example
+# Copy this file to .projectlens/config.toml or run: projectlens config init .
+
+[embedding]
+backend = "local"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+
+[llm]
+provider = "none"
+model = ""
+
+[runtime]
+max_context_tokens = 12000
+privacy_mode = true
+
+[mcp]
+default_root = "."

@@ -1,0 +1,53 @@
+{
+  "name": "projectlens-self",
+  "cases": [
+    {
+      "id": "mcp-server",
+      "query": "where is the MCP stdio server implemented?",
+      "expected_paths": ["src/projectlens_ai/mcp_server.py"],
+      "top_k": 3
+    },
+    {
+      "id": "mcp-tools",
+      "query": "where are MCP tool wrappers implemented?",
+      "expected_paths": ["src/projectlens_ai/mcp_tools.py"],
+      "top_k": 3
+    },
+    {
+      "id": "language-capabilities",
+      "query": "where is language capability support implemented?",
+      "expected_paths": ["src/projectlens_ai/language_support.py"],
+      "top_k": 5
+    },
+    {
+      "id": "javascript-typescript-parser",
+      "query": "where is the JavaScript TypeScript parser implemented?",
+      "expected_paths": ["src/projectlens_ai/js_ts_parser.py"],
+      "top_k": 5
+    },
+    {
+      "id": "source-grounded-ask",
+      "query": "where is source grounded ask implemented?",
+      "expected_paths": ["src/projectlens_ai/ask.py"],
+      "top_k": 5
+    },
+    {
+      "id": "hybrid-search",
+      "query": "where is hybrid search ranking implemented?",
+      "expected_paths": ["src/projectlens_ai/hybrid_search.py"],
+      "top_k": 5
+    },
+    {
+      "id": "project-checks",
+      "query": "where are project readiness checks implemented?",
+      "expected_paths": ["src/projectlens_ai/checks.py"],
+      "top_k": 5
+    },
+    {
+      "id": "repository-pack",
+      "query": "where is repository pack export implemented?",
+      "expected_paths": ["src/projectlens_ai/packer.py"],
+      "top_k": 5
+    }
+  ]
+}
