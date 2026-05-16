@@ -32,7 +32,10 @@ def create_mcp_server(default_root: str | Path):
         "ProjectLens AI",
         instructions=(
             "Use ProjectLens to overview, scan, index, search, inspect, and report capability coverage for local code repositories. "
-            "Start with projectlens_repository_overview for first-pass repo understanding. "
+            "For broad repository-understanding requests, whether quick or deep, start with projectlens_repository_overview as the planning map. "
+            "For quick summaries, overview may be enough; for deep or source-cited answers, continue with focused projectlens_search_code or projectlens_ask_codebase calls. "
+            "After overview, do not immediately repeat projectlens_scan_repository, projectlens_status, or projectlens_language_capabilities unless an overview field is missing or the user explicitly asks for that raw view. "
+            "For narrow requests such as only checks, status, eval, or finding one specific symbol/file, call the specific tool directly. "
             "Prefer projectlens_index_repository before search or ask when no index exists. "
             "projectlens_ask_codebase returns source-grounded evidence and does not call an LLM."
         ),

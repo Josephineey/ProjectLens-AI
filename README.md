@@ -317,11 +317,12 @@ the `projectlens-mcp` command and pass `--root` with the repository path.
 ## MCP Prompt Examples
 
 When ProjectLens is connected to an MCP client, users do not need to know the
-low-level `scan`, `index`, or `search` commands. The client can start with
-`projectlens_repository_overview` for a compact first pass: technologies,
-entrypoints, language support, index status, quality-check summary, important
-files, and suggested follow-up queries. Then it can call search or ask tools only
-when the user needs deeper evidence.
+low-level `scan`, `index`, or `search` commands. For broad repository
+understanding, the client should start with `projectlens_repository_overview` as
+a planning map. Quick summaries may stop there; deep or source-cited answers
+should continue with focused search or ask calls. After overview, clients should
+avoid repeating scan/status/capabilities calls unless the user asks for the raw
+output or a field is missing.
 
 Start with the compact overview when you want a fast first answer:
 
