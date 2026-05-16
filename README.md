@@ -313,6 +313,36 @@ args = ["--root", "C:\\path\\to\\repo"]
 Claude Desktop and Cursor use the same idea: point their MCP configuration to
 the `projectlens-mcp` command and pass `--root` with the repository path.
 
+## MCP Prompt Examples
+
+When ProjectLens is connected to an MCP client, users do not need to know the
+low-level `scan`, `index`, or `search` commands. Ask the AI client to inspect a
+local repository path and let it choose the right ProjectLens tools.
+
+```text
+Use ProjectLens to inspect this repository:
+C:\path\to\repo
+
+Explain in simple Turkish:
+- what the project does
+- how to run it
+- which files matter most
+- what architecture or patterns it uses
+```
+
+For Turkish users asking about English code, it can help to ask the client to
+translate the natural-language question into technical search queries before
+calling ProjectLens:
+
+```text
+ProjectLens ile şu repoyu incele:
+C:\path\to\repo
+
+Bana Türkçe cevap ver. ProjectLens araması yaparken Türkçe sorularımı İngilizce
+teknik query'lere çevir. Örneğin "veritabanı bağlantısı" için "database
+connection", "sqlite connect", "db config" gibi birkaç sorgu varyasyonu dene.
+Cevabında kullandığın dosya/satır kaynaklarını belirt.
+```
 ## Roadmap
 
 1. Repo scanner and CLI foundation.
