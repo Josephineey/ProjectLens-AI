@@ -36,6 +36,16 @@ class CliTests(unittest.TestCase):
 
 
 
+    def test_parser_accepts_overview_command(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["overview", ".", "--json", "--no-index", "--no-checks"])
+
+        self.assertEqual(args.command, "overview")
+        self.assertTrue(args.json)
+        self.assertTrue(args.no_index)
+        self.assertTrue(args.no_checks)
+        self.assertEqual(args.handler.__name__, "handle_overview")
+
     def test_parser_accepts_capabilities_command(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["capabilities", ".", "--json"])

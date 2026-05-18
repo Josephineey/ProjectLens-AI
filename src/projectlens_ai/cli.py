@@ -15,6 +15,7 @@ from .embeddings import EmbeddingUnavailable
 from .eval import load_eval_suite, resolve_eval_cases_path, run_eval
 from .hybrid_search import search_hybrid_index
 from .index_store import build_index, load_index_stats
+from .mcp_tools import mcp_repository_overview
 from .packer import write_repository_pack
 from .scanner import scan_repository
 from .search import search_index, search_repository
@@ -40,6 +41,13 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("path", nargs="?", default=".", help="Repository path to scan.")
     scan_parser.add_argument("--json", action="store_true", help="Print the full scan report as JSON.")
     scan_parser.set_defaults(handler=handle_scan)
+
+    overview_parser = subparsers.add_parser("overview", help="Print a compact first-pass repository overview.")
+    overview_parser.add_argument("path", nargs="?", default=".", help="Repository path to inspect.")
+    overview_parser.add_argument("--json", action="store_true", help="Print the overview payload as JSON.")
+    overview_parser.add_argument("--no-index", action="store_true", help="Do not build a SQLite index if one is missing.")
+    overview_parser.add_argument("--no-checks", action="store_true", help="Skip project readiness checks.")
+    overview_parser.set_defaults(handler=handle_overview)
 
     pack_parser = subparsers.add_parser("pack", help="Export an AI-friendly repository digest.")
     pack_parser.add_argument("path", nargs="?", default=".", help="Repository path to pack.")
@@ -160,6 +168,90 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
+
+def handle_overview(args: argparse.Namespace) -> int:
+    overview = mcp_repository_overview(
+        ".",
+        str(Path(args.path)),
+        build_index_if_missing=not args.no_index,
+        include_checks=not args.no_checks,
+    )
+    if args.json:
+        print(json.dumps(overview, indent=2, ensure_ascii=False))
+        return 0
+
+    summary = overview["summary"]
+    print("ProjectLens overview")
+    print()
+    print(f"Root: {overview['root']}")
+    print("Answer policy: no LLM was called; this is a compact first-pass repository map.")
+    print()
+    print("Summary:")
+    print(f"  Files: {summary['files']}")
+    print(f"  Symbols: {summary['symbols']}")
+    print(f"  Imports: {summary['imports']}")
+    print(f"  Technologies: {', '.join(summary['technologies']) if summary['technologies'] else 'unknown'}")
+    print(f"  Entrypoints: {', '.join(summary['entrypoints']) if summary['entrypoints'] else 'not detected'}")
+    if summary["warnings"]:
+        print("  Warnings:")
+        for warning in summary["warnings"][:5]:
+            print(f"    - {warning}")
+    print()
+
+    index = overview["index"]
+    if index["indexed"]:
+        state = "OK"
+        if index["built_now"]:
+            state += " (built now)"
+        elif index["indexed_before"]:
+            state += " (already existed)"
+        print(f"Index: {state}")
+        print(f"  Files: {index['files']}, symbols: {index['symbols']}, chunks: {index['chunks']}, embeddings: {index['embeddings']}")
+    else:
+        print(f"Index: not available ({index['message']})")
+    print()
+
+    checks = overview.get("checks")
+    if checks is None:
+        print("Checks: skipped")
+    else:
+        counts = checks["summary"]
+        print(f"Checks: pass={counts['pass']} warn={counts['warn']} fail={counts['fail']} info={counts['info']}")
+        for finding in checks["findings"][:5]:
+            paths = f" ({', '.join(finding['paths'])})" if finding["paths"] else ""
+            print(f"  [{finding['status'].upper()}] {finding['title']}: {finding['message']}{paths}")
+    print()
+
+    capabilities = overview["language_capabilities"]
+    print("Language support:")
+    if not capabilities:
+        print("  - no source language files detected")
+    for capability in capabilities:
+        print(
+            f"  - {capability['language']}: {capability['support_level']} "
+            f"({capability['confidence']} confidence, files={capability['file_count']}, "
+            f"symbols={capability['symbol_count']}, parser={capability['parser']})"
+        )
+    print()
+
+    files = overview["important_files"]
+    if files:
+        print("Important files:")
+        for file in files[:10]:
+            print(f"  - {file['path']} ({file['role']})")
+        print()
+
+    queries = overview["suggested_follow_up_queries"]
+    if queries:
+        print("Suggested follow-up queries:")
+        for query in queries[:6]:
+            print(f"  - {query}")
+        print()
+
+    print("Next steps:")
+    print("  projectlens search \"<query>\" <path> --hybrid")
+    print("  projectlens ask \"<question>\" <path>")
+    return 0
 
 def handle_scan(args: argparse.Namespace) -> int:
     report = scan_repository(Path(args.path))

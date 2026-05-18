@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
-from typing import Any
 
 try:  # pragma: no cover - Python 3.11+ path is used in this environment.
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
-
 
 SECRET_LIKE_FILENAMES = {
     ".env",
@@ -18,15 +17,37 @@ SECRET_LIKE_FILENAMES = {
     "credentials.json",
 }
 
-REQUIRED_GITIGNORE_PATTERNS = {
-    ".venv/",
-    "__pycache__/",
+ALWAYS_REQUIRED_GITIGNORE_PATTERNS = {
     ".env",
     ".projectlens/",
     "*.sqlite",
     "projectlens-output.md",
 }
 
+PYTHON_REQUIRED_GITIGNORE_PATTERNS = {
+    ".venv/",
+    "__pycache__/",
+}
+
+NODE_REQUIRED_GITIGNORE_PATTERNS = {
+    "node_modules/",
+}
+
+IGNORED_SCAN_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".projectlens",
+    "dist",
+    "build",
+    ".next",
+}
+
+NODE_TEST_SUFFIXES = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 
 @dataclass(frozen=True)
 class CheckResult:
@@ -35,7 +56,6 @@ class CheckResult:
     title: str
     message: str
     paths: tuple[str, ...] = ()
-
 
 @dataclass(frozen=True)
 class ChecksReport:
@@ -62,15 +82,23 @@ class ChecksReport:
     def is_passing(self) -> bool:
         return self.fail_count == 0
 
+@dataclass(frozen=True)
+class ProjectProfile:
+    has_python: bool
+    has_node: bool
+    has_pyproject: bool
+    has_package_json: bool
+    expects_python_package_metadata: bool
 
 def run_project_checks(root: str | Path) -> ChecksReport:
     root_path = Path(root).expanduser().resolve()
+    profile = _detect_project_profile(root_path)
     results = [
         _check_readme(root_path),
         _check_license(root_path),
-        _check_pyproject(root_path),
-        _check_tests(root_path),
-        _check_gitignore(root_path),
+        _check_pyproject(root_path, profile),
+        _check_tests(root_path, profile),
+        _check_gitignore(root_path, profile),
         _check_secret_like_files(root_path),
         _check_config_example(root_path),
         _check_ci_workflow(root_path),
@@ -79,6 +107,30 @@ def run_project_checks(root: str | Path) -> ChecksReport:
     ]
     return ChecksReport(root=str(root_path), results=tuple(results))
 
+def _detect_project_profile(root: Path) -> ProjectProfile:
+    has_pyproject = (root / "pyproject.toml").exists()
+    has_package_json = (root / "package.json").exists()
+    has_python_metadata = has_pyproject or any((root / name).exists() for name in ("setup.py", "setup.cfg", "requirements.txt"))
+    has_node_metadata = has_package_json or any((root / name).exists() for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "tsconfig.json"))
+    has_python_files = has_python_metadata or any(path.suffix == ".py" for path in _iter_project_files(root))
+    has_node_files = has_node_metadata or any(path.suffix in NODE_TEST_SUFFIXES for path in _iter_project_files(root))
+    expects_python_package_metadata = has_python_metadata or (has_python_files and not has_node_metadata)
+    return ProjectProfile(
+        has_python=has_python_files,
+        has_node=has_node_files,
+        has_pyproject=has_pyproject,
+        has_package_json=has_package_json,
+        expects_python_package_metadata=expects_python_package_metadata,
+    )
+
+def _iter_project_files(root: Path):
+    if not root.exists():
+        return
+    for path in root.rglob("*"):
+        if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(root).parts[:-1]):
+            continue
+        if path.is_file():
+            yield path
 
 def _check_readme(root: Path) -> CheckResult:
     path = root / "README.md"
@@ -100,7 +152,6 @@ def _check_readme(root: Path) -> CheckResult:
         )
     return CheckResult("readme", "pass", "README", "README.md is present and contains core public-project sections.", ("README.md",))
 
-
 def _check_license(root: Path) -> CheckResult:
     path = root / "LICENSE"
     if not path.exists():
@@ -110,10 +161,16 @@ def _check_license(root: Path) -> CheckResult:
         return CheckResult("license", "pass", "License", "LICENSE is present and looks like MIT.", ("LICENSE",))
     return CheckResult("license", "warn", "License", "LICENSE exists, but the license type was not recognized.", ("LICENSE",))
 
-
-def _check_pyproject(root: Path) -> CheckResult:
+def _check_pyproject(root: Path, profile: ProjectProfile) -> CheckResult:
     path = root / "pyproject.toml"
     if not path.exists():
+        if profile.has_node and not profile.expects_python_package_metadata:
+            return CheckResult(
+                "pyproject",
+                "info",
+                "Python package metadata",
+                "pyproject.toml is not required for this detected Node.js/TypeScript project.",
+            )
         return CheckResult("pyproject", "fail", "Python package metadata", "pyproject.toml is missing.", ("pyproject.toml",))
     try:
         data = tomllib.loads(_safe_read_text(path))
@@ -124,15 +181,19 @@ def _check_pyproject(root: Path) -> CheckResult:
     if not isinstance(project, dict):
         return CheckResult("pyproject", "fail", "Python package metadata", "pyproject.toml has no [project] table.", ("pyproject.toml",))
     missing = [key for key in ("name", "version", "description", "requires-python") if not project.get(key)]
-    scripts = project.get("scripts")
     if missing:
         return CheckResult("pyproject", "warn", "Python package metadata", f"pyproject.toml is missing: {', '.join(missing)}.", ("pyproject.toml",))
-    if not isinstance(scripts, dict) or "projectlens" not in scripts:
-        return CheckResult("pyproject", "warn", "Python package metadata", "pyproject.toml has no projectlens console script.", ("pyproject.toml",))
-    return CheckResult("pyproject", "pass", "Python package metadata", "pyproject.toml has package metadata and console script.", ("pyproject.toml",))
+    scripts = project.get("scripts")
+    if not isinstance(scripts, dict) or not scripts:
+        return CheckResult("pyproject", "warn", "Python package metadata", "pyproject.toml has no console scripts; this may be fine for libraries.", ("pyproject.toml",))
+    return CheckResult("pyproject", "pass", "Python package metadata", "pyproject.toml has package metadata and console script(s).", ("pyproject.toml",))
 
+def _check_tests(root: Path, profile: ProjectProfile) -> CheckResult:
+    if profile.has_node and not profile.expects_python_package_metadata:
+        return _check_node_tests(root)
+    return _check_python_tests(root)
 
-def _check_tests(root: Path) -> CheckResult:
+def _check_python_tests(root: Path) -> CheckResult:
     tests_dir = root / "tests"
     if not tests_dir.exists():
         return CheckResult("tests", "fail", "Tests", "tests/ directory is missing.", ("tests/",))
@@ -141,19 +202,55 @@ def _check_tests(root: Path) -> CheckResult:
         return CheckResult("tests", "fail", "Tests", "No test_*.py files were found under tests/.", ("tests/",))
     if len(test_files) < 3:
         return CheckResult("tests", "warn", "Tests", f"Only {len(test_files)} test file(s) found; coverage may be thin.", tuple(test_files))
-    return CheckResult("tests", "pass", "Tests", f"Found {len(test_files)} test files.", tuple(test_files[:5]))
+    return CheckResult("tests", "pass", "Tests", f"Found {len(test_files)} Python test files.", tuple(test_files[:5]))
 
+def _check_node_tests(root: Path) -> CheckResult:
+    test_files = _find_node_test_files(root)
+    if test_files:
+        status = "pass" if len(test_files) >= 2 else "warn"
+        message = f"Found {len(test_files)} JavaScript/TypeScript test file(s)."
+        if status == "warn":
+            message += " Coverage may be thin."
+        return CheckResult("tests", status, "Tests", message, tuple(test_files[:5]))
+    if _package_json_has_test_script(root):
+        return CheckResult("tests", "warn", "Tests", "package.json has a test script, but no *.test/* .spec files were found.", ("package.json",))
+    return CheckResult("tests", "fail", "Tests", "No JavaScript/TypeScript test files or package.json test script were found.", ("tests/", "package.json"))
 
-def _check_gitignore(root: Path) -> CheckResult:
+def _find_node_test_files(root: Path) -> list[str]:
+    matches: list[str] = []
+    for path in _iter_project_files(root):
+        if path.suffix not in NODE_TEST_SUFFIXES:
+            continue
+        name = path.name.lower()
+        if ".test." in name or ".spec." in name:
+            matches.append(path.relative_to(root).as_posix())
+    return sorted(matches)
+
+def _package_json_has_test_script(root: Path) -> bool:
+    path = root / "package.json"
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(_safe_read_text(path))
+    except json.JSONDecodeError:
+        return False
+    scripts = data.get("scripts") if isinstance(data, dict) else None
+    return isinstance(scripts, dict) and bool(scripts.get("test"))
+
+def _check_gitignore(root: Path, profile: ProjectProfile) -> CheckResult:
     path = root / ".gitignore"
     if not path.exists():
         return CheckResult("gitignore", "fail", "Git ignore rules", ".gitignore is missing.", (".gitignore",))
     lines = {line.strip() for line in _safe_read_text(path).splitlines() if line.strip() and not line.strip().startswith("#")}
-    missing = sorted(pattern for pattern in REQUIRED_GITIGNORE_PATTERNS if pattern not in lines)
+    required = set(ALWAYS_REQUIRED_GITIGNORE_PATTERNS)
+    if profile.expects_python_package_metadata:
+        required.update(PYTHON_REQUIRED_GITIGNORE_PATTERNS)
+    if profile.has_node:
+        required.update(NODE_REQUIRED_GITIGNORE_PATTERNS)
+    missing = sorted(pattern for pattern in required if pattern not in lines)
     if missing:
         return CheckResult("gitignore", "warn", "Git ignore rules", f".gitignore is missing patterns: {', '.join(missing)}.", (".gitignore",))
-    return CheckResult("gitignore", "pass", "Git ignore rules", ".gitignore protects local env, secrets, generated outputs, and local indexes.", (".gitignore",))
-
+    return CheckResult("gitignore", "pass", "Git ignore rules", ".gitignore protects local env, dependencies, generated outputs, and local indexes.", (".gitignore",))
 
 def _check_secret_like_files(root: Path) -> CheckResult:
     present: list[str] = []
@@ -171,16 +268,14 @@ def _check_secret_like_files(root: Path) -> CheckResult:
         )
     return CheckResult("secrets", "pass", "Secret-like files", "No root-level secret-like files were found.")
 
-
 def _check_config_example(root: Path) -> CheckResult:
     path = root / "config-example.toml"
     if not path.exists():
-        return CheckResult("config-example", "warn", "Config example", "config-example.toml is missing.", ("config-example.toml",))
+        return CheckResult("config-example", "info", "Config example", "config-example.toml is not present; this is optional unless the project exposes local configuration.")
     text = _safe_read_text(path).lower()
     if "embedding" not in text or "privacy_mode" not in text:
-        return CheckResult("config-example", "warn", "Config example", "config-example.toml exists but does not document core settings.", ("config-example.toml",))
+        return CheckResult("config-example", "warn", "Config example", "config-example.toml exists but does not document core ProjectLens-style settings.", ("config-example.toml",))
     return CheckResult("config-example", "pass", "Config example", "config-example.toml documents core local settings.", ("config-example.toml",))
-
 
 def _check_ci_workflow(root: Path) -> CheckResult:
     workflows = root / ".github" / "workflows"
@@ -193,7 +288,6 @@ def _check_ci_workflow(root: Path) -> CheckResult:
         return CheckResult("ci", "warn", "CI workflow", "GitHub workflows directory exists but has no YAML workflow.", (".github/workflows/",))
     return CheckResult("ci", "pass", "CI workflow", f"Found {len(files)} GitHub Actions workflow file(s).", tuple(files))
 
-
 def _check_generated_artifacts(root: Path) -> CheckResult:
     generated = ["projectlens-output.md"]
     present = [name for name in generated if (root / name).exists()]
@@ -205,20 +299,17 @@ def _check_generated_artifacts(root: Path) -> CheckResult:
         return CheckResult("generated-artifacts", "warn", "Generated artifacts", "Generated artifacts exist and may not be ignored.", tuple(unignored))
     return CheckResult("generated-artifacts", "info", "Generated artifacts", "Generated report artifacts exist but are ignored by git.", tuple(present))
 
-
 def _check_local_index(root: Path) -> CheckResult:
     path = root / ".projectlens" / "index.sqlite"
     if not path.exists():
         return CheckResult("local-index", "info", "Local ProjectLens index", "No local ProjectLens index found; run `projectlens index .` when needed.")
     return CheckResult("local-index", "info", "Local ProjectLens index", "Local ProjectLens index exists and is ignored by git.", (".projectlens/index.sqlite",))
 
-
 def _safe_read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return ""
-
 
 def _count_status(results: tuple[CheckResult, ...], status: str) -> int:
     return sum(1 for result in results if result.status == status)

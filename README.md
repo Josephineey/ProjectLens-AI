@@ -26,6 +26,7 @@ retrieval layer, a language capability report, retrieval evals, and a stdio MCP 
 Available now:
 
 - `projectlens scan <path>`: scan a repository and print a local summary.
+- `projectlens overview <path>`: print a compact first-pass repository map for quick AI/client use.
 - `projectlens pack <path>`: export an AI-friendly Markdown repository digest.
 - `projectlens index <path>`: persist scan results into `.projectlens/index.sqlite`.
 - `projectlens status <path>`: show saved index status.
@@ -54,6 +55,7 @@ Coming later:
 python -m venv .venv
 .venv\Scripts\Activate
 python -m pip install -e .
+projectlens overview .
 projectlens scan .
 projectlens index .
 projectlens status .
@@ -70,13 +72,14 @@ projectlens doctor
 
 ## Usage
 
-Use `scan` when you want a quick local map of a repository. Use `index` when you
+Use `overview` when you want the compact first-pass map that an AI client should start with. Use `scan` when you want raw local scan details. Use `index` when you
 want ProjectLens to persist that map into SQLite. Use `embed build` after the
 index is ready and the local model has been downloaded. Use `search --hybrid`
 when you want a ranked file list, and use `ask` when you want source-grounded
 snippets with file and line references.
 
 ```powershell
+projectlens overview .
 projectlens scan .
 projectlens index .
 projectlens embed test .
@@ -104,6 +107,25 @@ The SQLite index then saves this local map so future layers can reuse it. When
 semantic search is enabled, ProjectLens embeds code chunks from this index and
 stores the vectors locally. Later, source-grounded Q&A can use these signals to
 select the right files before an LLM is asked to answer.
+
+## Repository Overview
+
+`projectlens overview <path>` is the CLI equivalent of the MCP
+`projectlens_repository_overview` tool. It gives a compact first-pass map: file
+count, technologies, entrypoints, index status, quality-check summary, language
+support, important files, and suggested follow-up queries.
+
+Use it when an AI client or a human wants a short, controlled repository summary
+before deciding whether deeper `search` or `ask` calls are needed.
+
+```powershell
+projectlens overview C:\path\to\repo
+projectlens overview C:\path\to\repo --json
+projectlens overview C:\path\to\repo --no-index --no-checks
+```
+
+`overview` may report warnings or failed checks, but it still exits successfully
+because its job is to inspect and explain the repository, not to block CI.
 
 ## Language Support
 
@@ -324,6 +346,12 @@ should continue with focused search or ask calls. After overview, clients should
 avoid repeating scan/status/capabilities calls unless the user asks for the raw
 output or a field is missing.
 
+If an MCP client chooses terminal commands instead of MCP tools, prefer the same
+compact first-pass behavior with:
+
+```powershell
+projectlens overview C:\path\to\repo
+```
 Start with the compact overview when you want a fast first answer:
 
 ```text

@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from projectlens_ai.checks import run_project_checks
 
-
 class ChecksTests(unittest.TestCase):
     def test_complete_repo_has_no_blocking_failures(self) -> None:
         with tempfile.TemporaryDirectory(dir=_test_tmp_root()) as directory:
@@ -34,6 +33,20 @@ class ChecksTests(unittest.TestCase):
 
         self.assertGreater(report.fail_count, 0)
         self.assertTrue(any(result.code == "pyproject" and result.status == "fail" for result in report.results))
+
+    def test_node_repo_uses_node_metadata_and_test_patterns(self) -> None:
+        with tempfile.TemporaryDirectory(dir=_test_tmp_root()) as directory:
+            root = Path(directory)
+            _write_minimal_node_repo(root)
+
+            report = run_project_checks(root)
+
+        self.assertEqual(report.fail_count, 0)
+        pyproject_result = next(result for result in report.results if result.code == "pyproject")
+        tests_result = next(result for result in report.results if result.code == "tests")
+        self.assertEqual(pyproject_result.status, "info")
+        self.assertEqual(tests_result.status, "pass")
+        self.assertIn("JavaScript/TypeScript", tests_result.message)
 
     def test_secret_like_file_is_blocking_failure_without_reading_contents(self) -> None:
         with tempfile.TemporaryDirectory(dir=_test_tmp_root()) as directory:
@@ -59,7 +72,6 @@ class ChecksTests(unittest.TestCase):
         gitignore_result = next(result for result in report.results if result.code == "gitignore")
         self.assertEqual(gitignore_result.status, "warn")
         self.assertIn(".env", gitignore_result.message)
-
 
 def _write_minimal_good_repo(root: Path) -> None:
     (root / "README.md").write_text(
@@ -101,12 +113,38 @@ def _write_minimal_good_repo(root: Path) -> None:
     workflows.mkdir(parents=True)
     (workflows / "test.yml").write_text("name: tests\n", encoding="utf-8")
 
+def _write_minimal_node_repo(root: Path) -> None:
+    (root / "README.md").write_text(
+        "# Example Node Project\n\n"
+        "## Quick Start\n\nRun npm install and npm test.\n\n"
+        "## Usage\n\nUse the CLI to generate Playwright tests.\n\n"
+        "## Configuration\n\nSet package scripts and Playwright config.\n\n"
+        "## Roadmap\n\nImprove agents, skills, and CI.\n\n"
+        + "This README has enough detail for a public Node project. " * 20,
+        encoding="utf-8",
+    )
+    (root / "LICENSE").write_text("MIT License\n\nPermission is hereby granted...\n", encoding="utf-8")
+    (root / "package.json").write_text(
+        '{"scripts":{"test":"vitest"},"devDependencies":{"typescript":"^5.0.0"}}',
+        encoding="utf-8",
+    )
+    (root / "tsconfig.json").write_text('{"compilerOptions":{"strict":true}}', encoding="utf-8")
+    (root / ".gitignore").write_text(
+        "node_modules/\n.env\n.projectlens/\n*.sqlite\nprojectlens-output.md\n",
+        encoding="utf-8",
+    )
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "app.spec.ts").write_text("test('ok', () => {});\n", encoding="utf-8")
+    (tests / "cli.test.ts").write_text("test('cli', () => {});\n", encoding="utf-8")
+    workflows = root / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("name: ci\n", encoding="utf-8")
 
 def _test_tmp_root() -> str:
     root = Path(os.environ.get("PROJECTLENS_TEST_TMP", Path.cwd() / ".test-tmp"))
     root.mkdir(parents=True, exist_ok=True)
     return str(root)
-
 
 if __name__ == "__main__":
     unittest.main()
